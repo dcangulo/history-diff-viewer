@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>.history Difference Viewer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css" />
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 1.5em;
+    }
+
+    .nav-buttons {
+      margin-top: 1em;
+      margin-bottom: 1em;
+    }
+
+    #diff {
+      border: 1px solid #ccc;
+      padding: 1em;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+
+<body>
+  <h1><code>.history</code> Difference Viewer</h1>
+
+  <input type="file" id="zipInput" accept=".zip" />
+
+  <div class="nav-buttons">
+    <label for="groupSelector">File group:</label>
+    <select id="groupSelector" style="margin-right: 1em;"></select>
+
+    <button id="prevBtn" disabled>&laquo; Previous</button>
+    <span id="fileLabel" style="margin: 0 1em;"></span>
+    <button id="nextBtn" disabled>Next &raquo;</button>
+
+    <select id="viewMode" style="margin-left: 1em;">
+      <option value="side-by-side">Split View</option>
+      <option value="line-by-line">Unified View</option>
+    </select>
+  </div>
+
+  <div id="diff">Upload a zip file containing <code>.history</code> folder</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js"></script>
+  <script>
+    const zipInput = document.getElementById('zipInput');
+    const diffContainer = document.getElementById('diff');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const groupSelector = document.getElementById('groupSelector');
+
+    let allGroups = {};
+    let currentGroup = '';
+    let groupFiles = [];
+    let currentIndex = 0;
+    let viewMode = 'side-by-side';
+
+    zipInput.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const zip = await JSZip.loadAsync(file);
+
+      const sampleFiles = Object.values(zip.files)
+        .filter(f => !f.dir);
+
+      allGroups = {};
+
+      sampleFiles.forEach(file => {
+        const parts = file.name.split('/');
+        const baseName = parts.pop();
+        const folderPath = parts.join('/');
+
+        const match = baseName.match(/^([a-zA-Z0-9]+)_\d+\.(.+)$/);
+        if (match) {
+          const prefix = match[1];
+          const ext = match[2];
+          const groupKey = (folderPath ? folderPath + '/' : '') + `${prefix}.${ext}`;
+
+          if (!allGroups[groupKey]) allGroups[groupKey] = [];
+          allGroups[groupKey].push(file);
+        }
+      });
+
+      for (const group of Object.values(allGroups)) {
+        group.sort((a, b) => {
+          const aDate = a.date ? new Date(a.date) : new Date(0);
+          const bDate = b.date ? new Date(b.date) : new Date(0);
+          return aDate - bDate;
+        });
+      }
+
+      groupSelector.innerHTML = '';
+      Object.keys(allGroups).forEach(groupName => {
+        const option = document.createElement('option');
+        option.value = groupName;
+        option.textContent = groupName;
+        groupSelector.appendChild(option);
+      });
+
+      currentGroup = Object.keys(allGroups)[0];
+      groupFiles = allGroups[currentGroup];
+      currentIndex = 0;
+      renderDiff(zip);
+      updateButtons();
+    });
+
+    groupSelector.addEventListener('change', async (e) => {
+      currentGroup = e.target.value;
+      groupFiles = allGroups[currentGroup] || [];
+      currentIndex = 0;
+      const zip = await JSZip.loadAsync(zipInput.files[0]);
+      renderDiff(zip);
+      updateButtons();
+    });
+
+    document.getElementById('viewMode').addEventListener('change', async (e) => {
+      viewMode = e.target.value;
+      const zip = await JSZip.loadAsync(zipInput.files[0]);
+      renderDiff(zip);
+    });
+
+    prevBtn.addEventListener('click', async () => {
+      if (currentIndex > 0) {
+        currentIndex--;
+        const zip = await JSZip.loadAsync(zipInput.files[0]);
+        renderDiff(zip);
+        updateButtons();
+      }
+    });
+
+    nextBtn.addEventListener('click', async () => {
+      if (currentIndex < groupFiles.length - 2) {
+        currentIndex++;
+        const zip = await JSZip.loadAsync(zipInput.files[0]);
+        renderDiff(zip);
+        updateButtons();
+      }
+    });
+
+    document.addEventListener('keydown', async (e) => {
+      const zipFile = zipInput.files[0];
+      if (!zipFile || groupFiles.length < 2) return;
+      const zip = await JSZip.loadAsync(zipFile);
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (currentIndex > 0) {
+            currentIndex--;
+            renderDiff(zip);
+            updateButtons();
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (currentIndex < groupFiles.length - 2) {
+            currentIndex++;
+            renderDiff(zip);
+            updateButtons();
+          }
+          break;
+      }
+    });
+
+    async function renderDiff(zip) {
+      if (groupFiles.length < 2 || currentIndex >= groupFiles.length - 1) {
+        diffContainer.textContent = "Need at least 2 files in the selected group to diff.";
+        return;
+      }
+
+      const fileA = groupFiles[currentIndex];
+      const fileB = groupFiles[currentIndex + 1];
+
+      const content1 = await zip.file(fileA.name).async("string");
+      const content2 = await zip.file(fileB.name).async("string");
+
+      const diffString = Diff.createTwoFilesPatch(
+        fileA.name, fileB.name,
+        content1, content2
+      );
+
+      const diffHtml = Diff2Html.html(diffString, {
+        drawFileList: false,
+        matching: 'lines',
+        outputFormat: viewMode
+      });
+
+      diffContainer.innerHTML = diffHtml;
+    }
+
+    function updateButtons() {
+      prevBtn.disabled = currentIndex === 0;
+      nextBtn.disabled = currentIndex >= groupFiles.length - 2;
+
+      const label = document.getElementById('fileLabel');
+      if (groupFiles.length >= 2) {
+        label.textContent = `File ${currentIndex + 1} and ${currentIndex + 2} of ${groupFiles.length}`;
+      } else {
+        label.textContent = '';
+      }
+    }
+  </script>
+</body>
+
+</html>
