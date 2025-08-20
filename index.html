@@ -77,7 +77,7 @@
         const baseName = parts.pop();
         const folderPath = parts.join('/');
 
-        const match = baseName.match(/^([a-zA-Z0-9]+)_\d+\.(.+)$/);
+        const match = baseName.match(/^([a-zA-Z0-9_]+)_\d+\.(.+)$/);
         if (match) {
           const prefix = match[1];
           const ext = match[2];
