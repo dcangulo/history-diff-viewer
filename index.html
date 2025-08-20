@@ -49,6 +49,12 @@
   <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js"></script>
   <script>
+    // https://github.com/lodash/lodash/blob/4.17.15/lodash.js#L7609
+    function last(array) {
+      var length = array == null ? 0 : array.length;
+      return length ? array[length - 1] : undefined;
+    }
+    
     const zipInput = document.getElementById('zipInput');
     const diffContainer = document.getElementById('diff');
     const prevBtn = document.getElementById('prevBtn');
@@ -90,8 +96,8 @@
 
       for (const group of Object.values(allGroups)) {
         group.sort((a, b) => {
-          const aDate = a.date ? new Date(a.date) : new Date(0);
-          const bDate = b.date ? new Date(b.date) : new Date(0);
+          const aDate = parseInt(last(last(a.name.split('/')).split('_')).split('.')[0]);
+          const bDate = parseInt(last(last(b.name.split('/')).split('_')).split('.')[0]);
           return aDate - bDate;
         });
       }
